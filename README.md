@@ -12,7 +12,7 @@ A tray icon shows the current state:
 | Fingerprint with a slash | Lid closed, or Always off in the menu. Password only. |
 | Circle with a slash | PAM has no lid check, for example after another authselect change. Run `sudo ./pam-setup install` again. |
 
-Right-click the icon to choose **Follow lid**, **Always on** or **Always off**. Always on accepts the fingerprint with the lid closed, for example with an external reader. Always off asks for the password with the lid open. The choice lasts until you reboot or log out completely, and the tooltip says when it is forced. The menu is disabled while PAM has no lid check.
+Right-click the icon to choose **Follow lid**, **Always on** or **Always off**. Always on accepts the fingerprint with the lid closed, for example with an external reader. Always off asks for the password with the lid open. The choice lasts until you reboot or log out completely, and the tooltip says when it is forced. These three items are disabled while PAM has no lid check. **Test fingerprint** runs `fprintd-verify` and shows in a notification whether your finger matched. Like sudo, it allows 3 tries within 30 seconds.
 
 ## Requirements
 
@@ -36,7 +36,7 @@ cd lid-fingerprint
 
 ## Check that it works
 
-- `fprintd-verify` reads your finger directly, without sudo or PAM.
+- **Test fingerprint** in the tray menu, or `fprintd-verify` in a terminal, reads your finger directly, without sudo or PAM.
 - With the lid open, `sudo -k; sudo true` asks for your finger.
 - With the lid closed, `sudo -k; sudo true` asks for your password.
 - With **Always off** chosen in the tray menu, `sudo -k; sudo true` asks for your password with the lid open.
@@ -49,7 +49,7 @@ cd lid-fingerprint
 - `system-auth` (sudo, polkit, login): if the check fails (lid closed, or Always off), PAM skips the `pam_fprintd` line and continues to the password.
 - `fingerprint-auth` (the KDE lock screen fingerprint path): if the check fails, PAM fails this path at once. The password field of the lock screen keeps working.
 
-The tray icon reads the lid state, the menu choice and `/etc/pam.d/system-auth` every 2 seconds. It shows whether the lid check is in place and what the check decides. It does not test the reader itself; use `fprintd-verify` for that.
+The tray icon reads the lid state, the menu choice and `/etc/pam.d/system-auth` every 2 seconds. It shows whether the lid check is in place and what the check decides. It does not test the reader itself. Use **Test fingerprint** for that.
 
 ## Uninstall
 

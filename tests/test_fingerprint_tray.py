@@ -5,6 +5,8 @@ from fingerprint_tray import (
     find_lid_state,
     fingerprint_state,
     read_override,
+    should_retry,
+    verify_outcome,
     write_override,
 )
 
@@ -136,3 +138,54 @@ def test_find_lid_state_returns_the_first_lid(lid):
 
 def test_find_lid_state_without_lid_returns_none(tmp_path):
     assert find_lid_state(tmp_path) is None
+
+
+def test_verify_match_reports_matched():
+    output = (
+        "Using device /net/reactivated/Fprint/Device/0\n"
+        "Verify started!\n"
+        "Verifying: any\n"
+        "Verify result: verify-match (done)\n"
+    )
+
+    assert verify_outcome(output) == ("match", "Fingerprint matched")
+
+
+def test_verify_retry_then_no_match_reports_no_match():
+    output = (
+        "Verify started!\n"
+        "Verify result: verify-retry-scan (not done)\n"
+        "Verify result: verify-no-match (done)\n"
+    )
+
+    assert verify_outcome(output) == ("no-match", "Fingerprint did not match")
+
+
+def test_verify_without_enrolled_finger_reports_not_enrolled():
+    output = (
+        "ListEnrolledFingers failed: GDBus.Error:"
+        "net.reactivated.Fprint.Error.NoEnrolledPrints: Failed to discover prints\n"
+    )
+
+    assert verify_outcome(output) == ("not-enrolled", "No finger enrolled: run fprintd-enroll")
+
+
+def test_verify_other_failure_reports_the_last_output_line():
+    output = "Verify started!\nVerify result: verify-disconnected (done)\n"
+
+    assert verify_outcome(output) == (
+        "error",
+        "Fingerprint test failed: Verify result: verify-disconnected (done)",
+    )
+
+
+def test_no_match_before_the_last_try_retries():
+    assert should_retry("no-match", attempt=2)
+
+
+def test_no_match_on_the_third_try_stops_like_pam_fprintd():
+    assert not should_retry("no-match", attempt=3)
+
+
+def test_match_does_not_retry():
+    assert not should_retry("match", attempt=1)

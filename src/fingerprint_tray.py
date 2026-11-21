@@ -28,6 +28,14 @@ ICONS = {
     ),
 }
 MODES = {"lid": "Follow lid", "on": "Always on", "off": "Always off"}
+# pam_fprintd defaults (man pam_fprintd), so the test behaves like sudo.
+VERIFY_MAX_TRIES = 3
+VERIFY_TIMEOUT_MS = 30_000
+VERIFY_MESSAGES = {
+    "match": "Fingerprint matched",
+    "no-match": "Fingerprint did not match",
+    "not-enrolled": "No finger enrolled: run fprintd-enroll",
+}
 
 
 def find_lid_state(lid_dir: Path = LID_DIR) -> Path | None:
@@ -69,10 +77,29 @@ def fingerprint_state(
     return "on" if "open" in lid else "off"
 
 
+def verify_outcome(output: str) -> tuple[str, str]:
+    """Read the fprintd-verify output and return (kind, message for the user)."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    results = [line for line in lines if line.startswith("Verify result:") and "(done)" in line]
+    if results and "verify-match" in results[-1]:
+        kind = "match"
+    elif results and "verify-no-match" in results[-1]:
+        kind = "no-match"
+    elif "NoEnrolledPrints" in output:
+        kind = "not-enrolled"
+    else:
+        return "error", f"Fingerprint test failed: {lines[-1] if lines else 'no output'}"
+    return kind, VERIFY_MESSAGES[kind]
+
+
+def should_retry(kind: str, attempt: int) -> bool:
+    return kind == "no-match" and attempt < VERIFY_MAX_TRIES
+
+
 def main() -> None:
     # Qt stays out of module scope so the tests run without PyQt6.
-    from PyQt6.QtCore import QTimer
-    from PyQt6.QtGui import QAction, QActionGroup, QIcon
+    from PyQt6.QtCore import QProcess, QTimer
+    from PyQt6.QtGui import QAction, QIcon
     from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
     app = QApplication(sys.argv)
@@ -81,7 +108,7 @@ def main() -> None:
 
     tray = QSystemTrayIcon()
     menu = QMenu()
-    modes = QActionGroup(menu)
+    # No exclusive QActionGroup: Plasma draws its members as radio buttons, not check marks.
     mode_actions = {}
 
     def choose(mode: str) -> None:
@@ -93,9 +120,58 @@ def main() -> None:
     for mode, label in MODES.items():
         action = QAction(label, menu, checkable=True)
         action.triggered.connect(lambda _checked, m=mode: choose(m))
-        modes.addAction(action)
         menu.addAction(action)
         mode_actions[mode] = action
+    menu.addSeparator()
+
+    verify = QProcess()
+    verify.setProgram("fprintd-verify")
+    verify.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+    test_action = QAction("Test fingerprint", menu)
+    verify_timeout = QTimer(singleShot=True, interval=VERIFY_TIMEOUT_MS)
+    verify_timeout.timeout.connect(verify.kill)
+    attempt = 0
+
+    def start_test() -> None:
+        nonlocal attempt
+        attempt = 1
+        test_action.setEnabled(False)
+        tray.showMessage("Fingerprint test", "Touch the reader")
+        verify.start()
+        verify_timeout.start()
+
+    def finish_test() -> None:
+        nonlocal attempt
+        output = bytes(verify.readAllStandardOutput()).decode(errors="replace")
+        if verify.exitStatus() == QProcess.ExitStatus.CrashExit:
+            kind, message = "error", "Fingerprint test stopped: no match within 30 seconds"
+        else:
+            kind, message = verify_outcome(output)
+        if should_retry(kind, attempt):
+            attempt += 1
+            tray.showMessage(
+                "Fingerprint test",
+                f"No match, touch the reader again ({attempt} of {VERIFY_MAX_TRIES})",
+            )
+            verify.start()
+            return
+        verify_timeout.stop()
+        icon = QSystemTrayIcon.MessageIcon
+        tray.showMessage(
+            "Fingerprint test", message, icon.Information if kind == "match" else icon.Warning
+        )
+        test_action.setEnabled(True)
+
+    def test_failed_to_start(error: QProcess.ProcessError) -> None:
+        if error == QProcess.ProcessError.FailedToStart:
+            verify_timeout.stop()
+            tray.showMessage("Fingerprint test", "fprintd-verify is missing: install fprintd")
+            test_action.setEnabled(True)
+
+    test_action.triggered.connect(start_test)
+    verify.finished.connect(finish_test)
+    verify.errorOccurred.connect(test_failed_to_start)
+    menu.addAction(test_action)
     menu.addSeparator()
     quit_action = QAction("Quit", menu)
     quit_action.triggered.connect(app.quit)
@@ -108,8 +184,10 @@ def main() -> None:
     def refresh() -> None:
         nonlocal shown
         state = fingerprint_state(lid_state)
-        modes.setEnabled(state != "unconfigured")
-        mode_actions[read_override() or "lid"].setChecked(True)
+        current = read_override() or "lid"
+        for mode, action in mode_actions.items():
+            action.setEnabled(state != "unconfigured")
+            action.setChecked(mode == current)
         if state != shown:
             icon_name, tooltip = ICONS[state]
             tray.setIcon(QIcon.fromTheme(icon_name))
