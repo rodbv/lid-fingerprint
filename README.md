@@ -1,6 +1,6 @@
 # lid-fingerprint
 
-Use the fingerprint reader for sudo, polkit and the lock screen on Fedora KDE, but only while the laptop lid is open. If the lid is closed, for example with an external monitor, the prompt asks for the password at once instead of waiting for a finger you cannot reach. A tray menu can force the fingerprint on or off until the next reboot.
+Use the fingerprint reader for sudo, polkit and the lock screen on Fedora KDE, but only while the laptop lid is open. If the lid is closed, for example with an external monitor, the prompt asks for the password at once instead of waiting for a finger you cannot reach. A tray menu can force fingerprint login on or off until you reboot or log out completely.
 
 A tray icon shows the current state:
 
