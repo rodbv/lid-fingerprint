@@ -12,6 +12,8 @@ A tray icon shows the current state:
 | Fingerprint with a slash | Lid closed. Password only. |
 | Circle with a slash | PAM has no lid check, for example after another authselect change. Run `sudo ./pam-setup install` again. |
 
+Right-click the icon to choose **Follow lid**, **Always on** or **Always off**. Always on accepts the fingerprint with the lid closed, for example with an external reader. Always off asks for the password with the lid open. The choice lasts until you reboot or log out completely, and the tooltip says when it is forced. The menu is disabled while PAM has no lid check.
+
 ## Requirements
 
 - Fedora KDE with authselect (the Fedora default)
@@ -41,7 +43,7 @@ cd lid-fingerprint
 
 ## How it works
 
-`pam-setup install` copies your current authselect profile (usually `local`) to `custom/lid-fingerprint`, adds one line before each `pam_fprintd.so` line, and selects the new profile with your current features plus `with-fingerprint`. The added line runs `pam_exec` with `grep -q open /proc/acpi/button/lid/<LID>/state`:
+`pam-setup install` copies your current authselect profile (usually `local`) to `custom/lid-fingerprint`, adds one line before each `pam_fprintd.so` line, and selects the new profile with your current features plus `with-fingerprint`. The added line runs `pam_exec` with `/usr/local/sbin/lid-fingerprint-check`, which `pam-setup install` copies from `sbin/`. The script reads the menu choice from `/run/user/<uid>/lid-fingerprint` (`on` or `off`). Without a choice, it checks that `/proc/acpi/button/lid/<LID>/state` says `open`:
 
 - `system-auth` (sudo, polkit, login): if the lid is closed, PAM skips the `pam_fprintd` line and continues to the password.
 - `fingerprint-auth` (the KDE lock screen fingerprint path): if the lid is closed, PAM fails this path at once. The password field of the lock screen keeps working.
@@ -54,7 +56,7 @@ The tray icon reads the lid state and `/etc/pam.d/system-auth` every 2 seconds. 
 ./uninstall.sh
 ```
 
-`uninstall.sh` removes the tray icon and selects your earlier base profile with the same features, without `with-fingerprint`. To keep the fingerprint on with the lid closed too, run `sudo authselect enable-feature with-fingerprint`.
+`uninstall.sh` removes the tray icon and the check script, and selects your earlier base profile with the same features, without `with-fingerprint`. To keep the fingerprint on with the lid closed too, run `sudo authselect enable-feature with-fingerprint`.
 
 The first install also saves an authselect backup named `before-lid-fingerprint-<date>`. `sudo authselect backup-list` lists it, and `sudo authselect backup-restore <name>` restores it.
 

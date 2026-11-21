@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Fingerprint auth only while the laptop lid is open, through a custom authselect profile.
+# Fingerprint auth only while the laptop lid is open, or as the tray menu forces it,
+# through a custom authselect profile.
 #
 # Usage:
 #   sudo ./pam-setup install     create or refresh the profile and select it
@@ -12,6 +13,8 @@ PROFILE=lid-fingerprint
 PROFILE_DIR=/etc/authselect/custom/$PROFILE
 BASE_FILE=$PROFILE_DIR/lid-fingerprint.base
 LID_MARKER=/proc/acpi/button/lid/
+CHECK_SCRIPT=/usr/local/sbin/lid-fingerprint-check
+RUNTIME_ROOT=/run/user
 
 die() {
     echo "pam-setup: $*" >&2
@@ -32,7 +35,7 @@ find_lid_state() {
 
 patch_profile() {
     local dir=$1 lid_state=$2
-    local check="pam_exec.so quiet /usr/bin/grep -q open $lid_state"
+    local check="pam_exec.so quiet $CHECK_SCRIPT $lid_state $RUNTIME_ROOT"
 
     # pam_exec returns PAM_IGNORE for pam_setcred, hence ignore=ignore on both lines.
     # sudo, polkit: a closed lid skips the next line (pam_fprintd) and falls through to the password.
@@ -47,8 +50,8 @@ patch_profile() {
 }
 
 has_lid_check() {
-    local dir=$1 lid_state=$2
-    grep -qF "$lid_state" "$dir/system-auth" && grep -qF "$lid_state" "$dir/fingerprint-auth"
+    local dir=$1 check="$CHECK_SCRIPT $2 $RUNTIME_ROOT"
+    grep -qF "$check" "$dir/system-auth" && grep -qF "$check" "$dir/fingerprint-auth"
 }
 
 read_current() {
@@ -71,6 +74,8 @@ install() {
         base=${current[0]}
         backup=(--backup="before-$PROFILE-$(date +%Y%m%d%H%M%S)")
     fi
+
+    command install -Dm755 "$(dirname "$0")/sbin/lid-fingerprint-check" "$CHECK_SCRIPT"
 
     # A fresh copy picks up a new base profile or lid path.
     if [[ -d $PROFILE_DIR ]]; then rm -r -- "$PROFILE_DIR"; fi
@@ -100,6 +105,7 @@ uninstall() {
     done
     authselect select "$base" "${features[@]}"
     rm -r -- "$PROFILE_DIR"
+    rm -f -- "$CHECK_SCRIPT"
     authselect current
     echo "Fingerprint is off. To keep it on with the lid closed: sudo authselect enable-feature with-fingerprint"
 }

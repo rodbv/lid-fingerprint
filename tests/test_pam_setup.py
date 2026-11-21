@@ -8,6 +8,7 @@ import pytest
 REPO = Path(__file__).parent.parent
 FIXTURE = Path(__file__).parent / "fixtures" / "local"
 LID_STATE = "/proc/acpi/button/lid/LID0/state"
+CHECK_COMMAND = f"/usr/local/sbin/lid-fingerprint-check {LID_STATE} /run/user"
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def test_system_auth_skips_only_the_fprintd_line_when_the_lid_check_fails(profil
     check = line_before_fprintd(profile / "system-auth")
 
     assert "[success=ignore ignore=ignore default=1]" in check
-    assert f"pam_exec.so quiet /usr/bin/grep -q open {LID_STATE}" in check
+    assert f"pam_exec.so quiet {CHECK_COMMAND}" in check
 
 
 def test_system_auth_lid_check_drops_out_with_the_fingerprint_feature(profile):
@@ -54,7 +55,7 @@ def test_fingerprint_auth_fails_at_once_when_the_lid_check_fails(profile):
     check = line_before_fprintd(profile / "fingerprint-auth")
 
     assert "[success=ignore ignore=ignore default=die]" in check
-    assert LID_STATE in check
+    assert f"pam_exec.so quiet {CHECK_COMMAND}" in check
 
 
 def test_lid_checks_ignore_pam_setcred_where_pam_exec_returns_pam_ignore(profile):

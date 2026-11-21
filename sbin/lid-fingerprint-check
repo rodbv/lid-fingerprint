@@ -1,0 +1,12 @@
+#!/bin/sh
+# Exit 0 if the fingerprint may be used: the user's override wins, then the lid state.
+# Usage (from PAM): lid-fingerprint-check LID_STATE RUNTIME_ROOT
+PATH=/usr/bin:/bin
+uid=$(id -u -- "$PAM_USER" 2>/dev/null)
+if [ -n "$uid" ]; then
+    case $(cat -- "$2/$uid/lid-fingerprint" 2>/dev/null) in
+    on) exit 0 ;;
+    off) exit 1 ;;
+    esac
+fi
+grep -q open -- "$1"
