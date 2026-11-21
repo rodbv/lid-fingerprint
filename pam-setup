@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Fingerprint auth only while the laptop lid is open, through a custom authselect profile.
+#
+# Usage:
+#   sudo ./pam-setup install     create or refresh the profile and select it
+#   sudo ./pam-setup uninstall   return to the base profile, fingerprint off
+#   ./pam-setup patch-profile DIR LID_STATE
+#                                add the lid check to a copy of a profile (used by install and tests)
+set -euo pipefail
+
+PROFILE=lid-fingerprint
+PROFILE_DIR=/etc/authselect/custom/$PROFILE
+BASE_FILE=$PROFILE_DIR/lid-fingerprint.base
+LID_MARKER=/proc/acpi/button/lid/
+
+die() {
+    echo "pam-setup: $*" >&2
+    exit 1
+}
+
+require_root() {
+    [[ $EUID -eq 0 ]] || die "run with sudo"
+}
+
+find_lid_state() {
+    local state
+    for state in /proc/acpi/button/lid/*/state; do
+        [[ -r $state ]] && { echo "$state"; return; }
+    done
+    die "no lid found under $LID_MARKER"
+}
+
+patch_profile() {
+    local dir=$1 lid_state=$2
+    local check="pam_exec.so quiet /usr/bin/grep -q open $lid_state"
+
+    # pam_exec returns PAM_IGNORE for pam_setcred, hence ignore=ignore on both lines.
+    # sudo, polkit: a closed lid skips the next line (pam_fprintd) and falls through to the password.
+    grep -q "$LID_MARKER" "$dir/system-auth" || sed -i \
+        "/pam_fprintd.so/i auth        [success=ignore ignore=ignore default=1]     $check {include if \"with-fingerprint\"}" \
+        "$dir/system-auth"
+
+    # KDE lock screen fingerprint path: a closed lid fails it at once, the password path stays.
+    grep -q "$LID_MARKER" "$dir/fingerprint-auth" || sed -i \
+        "/pam_fprintd.so/i auth        [success=ignore ignore=ignore default=die]   $check" \
+        "$dir/fingerprint-auth"
+}
+
+has_lid_check() {
+    local dir=$1 lid_state=$2
+    grep -qF "$lid_state" "$dir/system-auth" && grep -qF "$lid_state" "$dir/fingerprint-auth"
+}
+
+read_current() {
+    local raw
+    raw=$(authselect current --raw) || die "no authselect profile is selected"
+    read -ra current <<<"$raw"
+}
+
+install() {
+    require_root
+    local lid_state base backup=()
+    lid_state=$(find_lid_state)
+    read_current
+
+    if [[ ${current[0]} == "custom/$PROFILE" ]]; then
+        base=$(cat "$BASE_FILE" 2>/dev/null || echo local)
+    elif [[ ${current[0]} == custom/* ]]; then
+        die "the selected profile ${current[0]} is custom; merge the lid check into it by hand"
+    else
+        base=${current[0]}
+        backup=(--backup="before-$PROFILE-$(date +%Y%m%d%H%M%S)")
+    fi
+
+    # A fresh copy picks up a new base profile or lid path.
+    if [[ -d $PROFILE_DIR ]]; then rm -r -- "$PROFILE_DIR"; fi
+    authselect create-profile "$PROFILE" -b "$base"
+    echo "$base" >"$BASE_FILE"
+    patch_profile "$PROFILE_DIR" "$lid_state"
+    has_lid_check "$PROFILE_DIR" "$lid_state" || {
+        rm -r -- "$PROFILE_DIR"
+        die "$base has no pam_fprintd line to put the lid check before"
+    }
+
+    local features=("${current[@]:1}")
+    [[ " ${features[*]} " == *" with-fingerprint "* ]] || features+=(with-fingerprint)
+    authselect select "custom/$PROFILE" "${features[@]}" "${backup[@]}"
+    authselect current
+}
+
+uninstall() {
+    require_root
+    read_current
+    [[ ${current[0]} == "custom/$PROFILE" ]] || die "profile custom/$PROFILE is not selected"
+
+    local base feature features=()
+    base=$(cat "$BASE_FILE" 2>/dev/null || echo local)
+    for feature in "${current[@]:1}"; do
+        [[ $feature == with-fingerprint ]] || features+=("$feature")
+    done
+    authselect select "$base" "${features[@]}"
+    rm -r -- "$PROFILE_DIR"
+    authselect current
+    echo "Fingerprint is off. To keep it on with the lid closed: sudo authselect enable-feature with-fingerprint"
+}
+
+case ${1:-} in
+install) install ;;
+uninstall) uninstall ;;
+patch-profile)
+    [[ $# -eq 3 ]] || die "usage: pam-setup patch-profile DIR LID_STATE"
+    patch_profile "$2" "$3"
+    has_lid_check "$2" "$3" || die "no lid check added: $2 has no pam_fprintd line"
+    ;;
+*) die "usage: sudo pam-setup install|uninstall" ;;
+esac
