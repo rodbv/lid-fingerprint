@@ -98,7 +98,8 @@ def should_retry(kind: str, attempt: int) -> bool:
 
 def main() -> None:
     # Qt stays out of module scope so the tests run without PyQt6.
-    from PyQt6.QtCore import QProcess, QTimer
+    from PyQt6.QtCore import QMetaType, QProcess, QTimer, QVariant
+    from PyQt6.QtDBus import QDBusConnection, QDBusMessage
     from PyQt6.QtGui import QAction, QIcon
     from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -124,6 +125,37 @@ def main() -> None:
         mode_actions[mode] = action
     menu.addSeparator()
 
+    notification_id = 0
+
+    def notify(body: str, icon: str = "fprint-lid-open-symbolic", timeout_ms: int = -1) -> None:
+        """Send a desktop notification that replaces the previous test notification."""
+        nonlocal notification_id
+        message = QDBusMessage.createMethodCall(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+            "Notify",
+        )
+        replaces_id = QVariant(notification_id)
+        replaces_id.convert(QMetaType(QMetaType.Type.UInt.value))
+        actions = QVariant([])
+        actions.convert(QMetaType(QMetaType.Type.QStringList.value))
+        message.setArguments(
+            [
+                "Fingerprint lid",
+                replaces_id,
+                icon,
+                "Fingerprint test",
+                body,
+                actions,
+                {},
+                timeout_ms,
+            ]
+        )
+        reply = QDBusConnection.sessionBus().call(message)
+        if reply.arguments():
+            notification_id = reply.arguments()[0]
+
     verify = QProcess()
     verify.setProgram("fprintd-verify")
     verify.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -136,7 +168,7 @@ def main() -> None:
         nonlocal attempt
         attempt = 1
         test_action.setEnabled(False)
-        tray.showMessage("Fingerprint test", "Touch the reader")
+        notify("Touch the reader")
         verify.start()
         verify_timeout.start()
 
@@ -149,23 +181,20 @@ def main() -> None:
             kind, message = verify_outcome(output)
         if should_retry(kind, attempt):
             attempt += 1
-            tray.showMessage(
-                "Fingerprint test",
-                f"No match, touch the reader again ({attempt} of {VERIFY_MAX_TRIES})",
-            )
+            notify(f"No match, touch the reader again ({attempt} of {VERIFY_MAX_TRIES})")
             verify.start()
             return
         verify_timeout.stop()
-        icon = QSystemTrayIcon.MessageIcon
-        tray.showMessage(
-            "Fingerprint test", message, icon.Information if kind == "match" else icon.Warning
-        )
+        if kind == "match":
+            notify(message, timeout_ms=5000)
+        else:
+            notify(message, icon="dialog-warning")
         test_action.setEnabled(True)
 
     def test_failed_to_start(error: QProcess.ProcessError) -> None:
         if error == QProcess.ProcessError.FailedToStart:
             verify_timeout.stop()
-            tray.showMessage("Fingerprint test", "fprintd-verify is missing: install fprintd")
+            notify("fprintd-verify is missing: install fprintd", icon="dialog-warning")
             test_action.setEnabled(True)
 
     test_action.triggered.connect(start_test)
