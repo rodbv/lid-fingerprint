@@ -12,7 +12,9 @@ A tray icon shows the current state:
 | Fingerprint with a slash | Lid closed, or Always off in the menu. Password only. |
 | Circle with a slash | PAM has no lid check, for example after another authselect change. Run `sudo ./pam-setup install` again. |
 
-Right-click the icon to choose **Follow lid**, **Always on** or **Always off**. Always on accepts the fingerprint with the lid closed, for example with an external reader. Always off asks for the password with the lid open. The choice lasts until you reboot or log out completely, and the tooltip says when it is forced. These three items are disabled while PAM has no lid check. **Test fingerprint** runs `fprintd-verify` and shows in a notification whether your finger matched. Like sudo, it allows 3 tries within 30 seconds.
+Right-click the icon to choose **Follow lid**, **Always on** or **Always off**. Always on accepts the fingerprint with the lid closed, for example with an external reader. Always off asks for the password with the lid open. The choice lasts until you reboot or log out completely, and the tooltip says when it is forced. These three items are disabled while PAM has no lid check.
+
+**Test fingerprint** in the same menu runs `fprintd-verify`. One notification asks you to touch the reader and then shows the result in the same place. Like sudo, the test allows 3 tries within 30 seconds. A match closes the notification after 5 seconds, and a failure stays until you close it.
 
 ## Requirements
 
