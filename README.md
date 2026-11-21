@@ -1,6 +1,6 @@
 # lid-fingerprint
 
-Use the fingerprint reader for sudo, polkit and the lock screen on Fedora KDE, but only while the laptop lid is open. If the lid is closed, for example with an external monitor, the prompt asks for the password at once instead of waiting for a finger you cannot reach.
+Use the fingerprint reader for sudo, polkit and the lock screen on Fedora KDE, but only while the laptop lid is open. If the lid is closed, for example with an external monitor, the prompt asks for the password at once instead of waiting for a finger you cannot reach. A tray menu can force the fingerprint on or off until the next reboot.
 
 A tray icon shows the current state:
 
@@ -8,8 +8,8 @@ A tray icon shows the current state:
 
 | Icon | Meaning |
 |---|---|
-| Fingerprint | Lid open. sudo and the lock screen accept the fingerprint. |
-| Fingerprint with a slash | Lid closed. Password only. |
+| Fingerprint | Lid open, or Always on in the menu. sudo and the lock screen accept the fingerprint. |
+| Fingerprint with a slash | Lid closed, or Always off in the menu. Password only. |
 | Circle with a slash | PAM has no lid check, for example after another authselect change. Run `sudo ./pam-setup install` again. |
 
 Right-click the icon to choose **Follow lid**, **Always on** or **Always off**. Always on accepts the fingerprint with the lid closed, for example with an external reader. Always off asks for the password with the lid open. The choice lasts until you reboot or log out completely, and the tooltip says when it is forced. The menu is disabled while PAM has no lid check.
@@ -39,16 +39,17 @@ cd lid-fingerprint
 - `fprintd-verify` reads your finger directly, without sudo or PAM.
 - With the lid open, `sudo -k; sudo true` asks for your finger.
 - With the lid closed, `sudo -k; sudo true` asks for your password.
+- With **Always off** chosen in the tray menu, `sudo -k; sudo true` asks for your password with the lid open.
 - `authselect current` shows `custom/lid-fingerprint` with `with-fingerprint`.
 
 ## How it works
 
 `pam-setup install` copies your current authselect profile (usually `local`) to `custom/lid-fingerprint`, adds one line before each `pam_fprintd.so` line, and selects the new profile with your current features plus `with-fingerprint`. The added line runs `pam_exec` with `/usr/local/sbin/lid-fingerprint-check`, which `pam-setup install` copies from `sbin/`. The script reads the menu choice from `/run/user/<uid>/lid-fingerprint` (`on` or `off`). Without a choice, it checks that `/proc/acpi/button/lid/<LID>/state` says `open`:
 
-- `system-auth` (sudo, polkit, login): if the lid is closed, PAM skips the `pam_fprintd` line and continues to the password.
-- `fingerprint-auth` (the KDE lock screen fingerprint path): if the lid is closed, PAM fails this path at once. The password field of the lock screen keeps working.
+- `system-auth` (sudo, polkit, login): if the check fails (lid closed, or Always off), PAM skips the `pam_fprintd` line and continues to the password.
+- `fingerprint-auth` (the KDE lock screen fingerprint path): if the check fails, PAM fails this path at once. The password field of the lock screen keeps working.
 
-The tray icon reads the lid state and `/etc/pam.d/system-auth` every 2 seconds. It shows whether the lid check is in place and what the lid state is. It does not test the reader itself; use `fprintd-verify` for that.
+The tray icon reads the lid state, the menu choice and `/etc/pam.d/system-auth` every 2 seconds. It shows whether the lid check is in place and what the check decides. It does not test the reader itself; use `fprintd-verify` for that.
 
 ## Uninstall
 
@@ -63,7 +64,7 @@ The first install also saves an authselect backup named `before-lid-fingerprint-
 ## Limitations
 
 - Fedora KDE only. The PAM part needs authselect, and the tray icon expects a StatusNotifierItem tray such as the Plasma panel.
-- If your system already uses a custom authselect profile, `pam-setup install` stops. Add the two lines from `pam-setup` to your profile by hand.
+- If your system already uses a custom authselect profile, `pam-setup install` stops. Copy `sbin/lid-fingerprint-check` to `/usr/local/sbin` and add the two lines from `pam-setup` to your profile by hand.
 - If the machine has no lid in `/proc/acpi/button/lid`, `pam-setup install` stops.
 
 ## License

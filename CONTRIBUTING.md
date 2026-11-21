@@ -14,7 +14,7 @@ uv run pre-commit run --all-files   # ruff, ruff format, shellcheck, file hygien
 uv run pytest
 ```
 
-The tests do not need root or PyQt6. They patch a copy of the Fedora `local` authselect profile in `tests/fixtures/local` and feed fake lid and PAM files to the tray state logic.
+The tests do not need root or PyQt6. They patch a copy of the Fedora `local` authselect profile in `tests/fixtures/local` and feed fake lid and PAM files to the tray state logic. The check script tests run `sbin/lid-fingerprint-check` with a temporary runtime folder instead of `/run/user`.
 
 ## Run the tray icon from the checkout
 
