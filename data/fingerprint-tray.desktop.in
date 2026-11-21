@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Fingerprint lid indicator
+Comment=Tray icon: fingerprint auth on while the lid is open
+Exec=@BIN@
+Icon=fprint-lid-open-symbolic
+X-KDE-autostart-phase=2
